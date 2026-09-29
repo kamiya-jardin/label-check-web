@@ -1,0 +1,540 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="ラベル照合">
+<meta name="theme-color" content="#1f6f43">
+<title>ラベル照合</title>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"
+        integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
+<style>
+:root {
+  --bg: #f4f5f2; --card: #ffffff; --ink: #1c211d; --sub: #5d665f; --line: #d9ddd6;
+  --brand: #1f6f43; --brand-ink: #ffffff;
+  --ok: #1e7d3c; --ok-bg: #e3f3e7; --ng: #c62828; --ng-bg: #fde8e7;
+  --warn: #8a5a00; --warn-bg: #fff3d6; --mute: #8a918b; --mute-bg: #eceee9;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141715; --card: #1e2320; --ink: #e8ece8; --sub: #a3aca5; --line: #333a35;
+    --brand: #3a9a64; --brand-ink: #ffffff;
+    --ok: #5cc07a; --ok-bg: #1d3325; --ng: #ff6b61; --ng-bg: #3a1f1d;
+    --warn: #f0bf55; --warn-bg: #3a2f14; --mute: #7d857f; --mute-bg: #262b27;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Noto Sans JP", "Yu Gothic UI", sans-serif;
+  font-size: 16px; -webkit-text-size-adjust: 100%; }
+button { font: inherit; }
+.hidden { display: none !important; }
+.wrap { max-width: 720px; margin: 0 auto; padding: 0 16px; }
+
+/* ログイン */
+#login { min-height: 100vh; display: flex; align-items: center; }
+#login .box { width: 100%; background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 24px 20px; }
+#login h1 { font-size: 22px; margin: 0 0 4px; }
+#login p { color: var(--sub); margin: 0 0 18px; font-size: 14px; }
+label.f { display: block; font-size: 14px; color: var(--sub); margin: 12px 0 4px; }
+input.t { width: 100%; font-size: 18px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); color: var(--ink); }
+.btn { display: block; width: 100%; border: 0; border-radius: 12px; padding: 14px; font-size: 17px; font-weight: 700; cursor: pointer; }
+.btn.pri { background: var(--brand); color: var(--brand-ink); }
+.btn.sec { background: var(--mute-bg); color: var(--ink); }
+.btn + .btn { margin-top: 10px; }
+.err { color: var(--ng); font-size: 14px; min-height: 20px; margin-top: 10px; }
+
+/* ヘッダー */
+header { position: sticky; top: 0; z-index: 5; background: var(--brand); color: var(--brand-ink); }
+header .row1 { display: flex; align-items: center; gap: 8px; padding: 10px 0 4px; }
+header .farm { font-weight: 700; font-size: 18px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+header select { font-size: 16px; font-weight: 700; background: transparent; color: var(--brand-ink); border: 1px solid rgba(255,255,255,.5); border-radius: 8px; padding: 4px 6px; max-width: 100%; }
+header select option { color: #000; }
+header .ico { background: rgba(255,255,255,.15); color: var(--brand-ink); border: 0; border-radius: 8px; padding: 6px 10px; font-size: 14px; cursor: pointer; }
+header .fresh { font-size: 12px; opacity: .9; padding-bottom: 8px; line-height: 1.4; }
+.menu { position: absolute; right: 16px; top: 46px; background: var(--card); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; box-shadow: 0 6px 20px rgba(0,0,0,.2); overflow: hidden; }
+.menu button { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 12px 18px; font-size: 15px; color: var(--ink); cursor: pointer; }
+.menu button + button { border-top: 1px solid var(--line); }
+
+.banner { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; font-size: 14px; background: var(--warn-bg); color: var(--warn); display: flex; gap: 8px; align-items: center; }
+.banner button { margin-left: auto; border: 0; background: var(--warn); color: var(--card); border-radius: 8px; padding: 6px 10px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+
+/* 絞り込み */
+.bar { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0 8px; align-items: center; }
+.seg { display: inline-flex; background: var(--mute-bg); border-radius: 10px; padding: 3px; }
+.seg button { border: 0; background: none; padding: 7px 12px; border-radius: 8px; font-size: 14px; color: var(--sub); cursor: pointer; }
+.seg button.on { background: var(--card); color: var(--ink); font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+input.q { flex: 1; min-width: 140px; font-size: 16px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
+.prog { font-size: 14px; color: var(--sub); margin: 4px 0 6px; }
+.prog b { color: var(--ink); font-size: 16px; }
+.pbar { height: 6px; background: var(--mute-bg); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+.pbar i { display: block; height: 100%; background: var(--ok); }
+
+/* 一覧 */
+.grp { margin: 14px 0 0; }
+.grp h2 { font-size: 15px; margin: 0 0 6px; display: flex; justify-content: space-between; color: var(--sub); font-weight: 700; cursor: pointer; }
+.grp h2 span.n { font-weight: 400; }
+.item { display: flex; gap: 10px; align-items: center; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 11px 12px; margin-bottom: 6px; cursor: pointer; }
+.item .dot { width: 12px; height: 12px; border-radius: 50%; border: 2px solid var(--mute); flex: none; }
+.item.ok .dot { background: var(--ok); border-color: var(--ok); }
+.item.ng { border-color: var(--ng); background: var(--ng-bg); }
+.item.ng .dot { background: var(--ng); border-color: var(--ng); }
+.item.off { opacity: .55; }
+.item.off .dot { border-style: dashed; }
+.item .main { flex: 1; min-width: 0; }
+.item .nm { font-weight: 700; line-height: 1.35; word-break: break-all; }
+.item .sub { font-size: 13px; color: var(--sub); margin-top: 3px; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center; }
+.item .wk { text-align: right; font-size: 13px; color: var(--sub); flex: none; line-height: 1.4; }
+.item .wk b { color: var(--ink); font-size: 15px; }
+.tag { display: inline-block; font-size: 12px; padding: 1px 7px; border-radius: 6px; background: var(--mute-bg); color: var(--ink); font-weight: 700; }
+.tag.kb { background: var(--brand); color: var(--brand-ink); }
+.tag.sh { background: var(--warn-bg); color: var(--warn); }
+.tag.st-ok { background: var(--ok-bg); color: var(--ok); }
+.tag.st-ng { background: var(--ng); color: #fff; }
+.empty { text-align: center; color: var(--sub); padding: 40px 0; }
+
+/* 下から出るシート */
+.shade { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 20; display: flex; align-items: flex-end; }
+.sheet { width: 100%; max-width: 720px; margin: 0 auto; background: var(--card); border-radius: 16px 16px 0 0; padding: 18px 16px calc(18px + env(safe-area-inset-bottom)); max-height: 92vh; overflow: auto; }
+.sheet h3 { margin: 0 0 6px; font-size: 20px; line-height: 1.35; word-break: break-all; }
+.kv { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 15px; margin: 12px 0; }
+.kv dt { color: var(--sub); }
+.kv dd { margin: 0; word-break: break-all; }
+.jan { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: 17px; letter-spacing: .5px; }
+.jan b { font-size: 20px; }
+.note { font-size: 14px; border-radius: 10px; padding: 10px 12px; margin: 10px 0; line-height: 1.5; }
+.note.w { background: var(--warn-bg); color: var(--warn); }
+.note.m { background: var(--mute-bg); color: var(--sub); }
+.manual { display: flex; gap: 8px; margin-top: 10px; }
+.manual input { flex: 1; }
+.manual button { border: 0; border-radius: 10px; padding: 0 16px; background: var(--brand); color: var(--brand-ink); font-weight: 700; cursor: pointer; }
+
+/* スキャン */
+#scan { position: fixed; inset: 0; background: #000; z-index: 30; display: flex; flex-direction: column; }
+#scan .top { color: #fff; padding: 14px 16px; font-size: 15px; line-height: 1.4; }
+#scan .top b { display: block; font-size: 17px; }
+#reader { flex: 1; width: 100%; overflow: hidden; }
+#reader video { object-fit: cover; }
+#scan .bottom { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); }
+#scan .hint { color: #ddd; font-size: 14px; text-align: center; margin-bottom: 10px; }
+
+/* 結果 */
+#result { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; justify-content: center; padding: 24px 16px; }
+#result.ok { background: var(--ok); color: #fff; }
+#result.ng { background: var(--ng); color: #fff; }
+#result .big { font-size: 64px; text-align: center; line-height: 1; }
+#result .ttl { font-size: 30px; font-weight: 800; text-align: center; margin: 10px 0 18px; }
+#result .detail { background: rgba(255,255,255,.15); border-radius: 12px; padding: 12px 14px; font-size: 15px; line-height: 1.6; word-break: break-all; }
+#result .detail b { font-size: 16px; }
+#result .acts { margin-top: 22px; }
+#result .btn.pri { background: #fff; color: var(--ink); }
+#result .btn.sec { background: rgba(255,255,255,.2); color: #fff; }
+
+.toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--ink); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 14px; z-index: 50; max-width: calc(100% - 32px); }
+.loading { position: fixed; inset: 0; background: rgba(0,0,0,.25); z-index: 60; display: flex; align-items: center; justify-content: center; color: #fff; font-weight: 700; }
+</style>
+</head>
+<body>
+
+<!-- ログイン -->
+<section id="login" class="hidden">
+  <div class="wrap">
+    <div class="box">
+      <h1>ラベル照合</h1>
+      <p>WEB作業報告と同じ社員コード・パスコードでログインします。</p>
+      <label class="f" for="lcode">社員コード</label>
+      <input class="t" id="lcode" inputmode="numeric" autocomplete="username">
+      <label class="f" for="lpass">パスコード</label>
+      <input class="t" id="lpass" type="password" autocomplete="current-password">
+      <div class="err" id="lerr"></div>
+      <button class="btn pri" id="lbtn">ログイン</button>
+    </div>
+  </div>
+</section>
+
+<!-- 一覧 -->
+<section id="main" class="hidden">
+  <header>
+    <div class="wrap" style="position:relative">
+      <div class="row1">
+        <div class="farm" id="farmName"></div>
+        <button class="ico" id="btnReload">更新</button>
+        <button class="ico" id="btnMenu">…</button>
+      </div>
+      <div class="fresh" id="fresh"></div>
+      <div class="menu hidden" id="menu">
+        <button id="mImport">今すぐ取込</button>
+        <button id="mLogout">ログアウト</button>
+      </div>
+    </div>
+  </header>
+  <div class="wrap">
+    <div id="banners"></div>
+    <div class="bar">
+      <div class="seg" id="segStatus">
+        <button data-v="todo" class="on">未照合</button>
+        <button data-v="ng">不一致</button>
+        <button data-v="all">すべて</button>
+      </div>
+      <div class="seg" id="segWeek"></div>
+    </div>
+    <div class="bar"><input class="q" id="q" type="search" placeholder="商品名・分類・品番で検索"></div>
+    <div class="prog" id="prog"></div>
+    <div class="pbar"><i id="pbar" style="width:0"></i></div>
+    <div id="list"></div>
+    <div style="height:40px"></div>
+  </div>
+</section>
+
+<!-- 商品シート -->
+<div class="shade hidden" id="shade"><div class="sheet" id="sheet"></div></div>
+
+<!-- スキャン -->
+<section id="scan" class="hidden">
+  <div class="top" id="scanTop"></div>
+  <div id="reader"></div>
+  <div class="bottom">
+    <div class="hint">ラベル裏面のバーコードを枠に合わせてください</div>
+    <button class="btn sec" id="scanCancel">やめる</button>
+  </div>
+</section>
+
+<!-- 結果 -->
+<section id="result" class="hidden"></section>
+
+<div class="loading hidden" id="loading">読み込み中…</div>
+
+<script>
+'use strict';
+// ─── 設定：GASウェブアプリのURL（/exec で終わるもの） ───
+var API_URL = '';
+var VERSION = '20260929a';
+
+var MOCK = /[?&]mock=1/.test(location.search);
+var S = { session: null, data: null, status: 'todo', week: 'all', q: '', current: null, open: {} };
+var $ = function (id) { return document.getElementById(id); };
+var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
+function store(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+function load(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+
+function toast(msg, ms) {
+  var t = document.createElement('div'); t.className = 'toast'; t.textContent = msg;
+  document.body.appendChild(t); setTimeout(function () { t.remove(); }, ms || 3000);
+}
+function busy(on) { $('loading').classList.toggle('hidden', !on); }
+
+function api(action, payload) {
+  var body = Object.assign({ action: action, session: S.session }, payload || {});
+  if (MOCK) return window.mockApi(body);
+  if (!API_URL) return Promise.resolve({ ok: false, error: 'API_URL が未設定です' });
+  return fetch(API_URL, { method: 'POST', body: JSON.stringify(body) })
+    .then(function (r) { return r.json(); })
+    .catch(function () { return { ok: false, error: '通信できませんでした。電波の良い場所で再度お試しください' }; });
+}
+
+function show(id) {
+  ['login', 'main'].forEach(function (x) { $(x).classList.toggle('hidden', x !== id); });
+}
+
+// ─── ログイン ───
+$('lbtn').onclick = function () {
+  $('lerr').textContent = '';
+  busy(true);
+  api('login', { code: $('lcode').value, pass: $('lpass').value }).then(function (r) {
+    busy(false);
+    if (!r.ok) { $('lerr').textContent = r.error; return; }
+    S.session = r.session; store('lc_session', r.session); store('lc_code', $('lcode').value);
+    $('lpass').value = '';
+    onData(r);
+  });
+};
+$('lpass').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('lbtn').click(); });
+
+function logout() { S.session = null; S.data = null; store('lc_session', null); show('login'); }
+
+function reload(farm) {
+  busy(true);
+  return api('data', { farm: farm || (S.data && S.data.farm) }).then(function (r) {
+    busy(false);
+    if (!r.ok) { if (r.relogin) { logout(); toast(r.error); } else toast(r.error, 5000); return; }
+    onData(r);
+  });
+}
+
+function onData(r) {
+  S.data = r;
+  show('main');
+  renderHeader(); renderWeekSeg(); renderList();
+}
+
+// ─── ヘッダー ───
+function fmtAt(ms) {
+  if (!ms) return '';
+  var d = new Date(ms), p = function (n) { return ('0' + n).slice(-2); };
+  return (d.getMonth() + 1) + '/' + d.getDate() + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function shortDate(s) { return String(s || '').replace(/^\d{4}\//, '').replace(/^0/, '').replace(/\/0/, '/'); }
+
+function renderHeader() {
+  var d = S.data, m = d.meta || {};
+  if (d.farms && d.farms.length) {
+    $('farmName').innerHTML = '<select id="farmSel">' + d.farms.map(function (f) {
+      return '<option' + (f === d.farm ? ' selected' : '') + '>' + esc(f) + '</option>'; }).join('') + '</select>';
+    $('farmSel').onchange = function () { reload(this.value); };
+  } else {
+    $('farmName').textContent = d.farm || d.user.farm;
+  }
+  $('fresh').innerHTML = m['ファイル名']
+    ? '予定：' + esc(m['ファイル名']) + '<br>集計 ' + esc(shortDate(m['集計表の作成日時'])) + '　取込 ' + esc(shortDate(m['取込日時'])) + '　' + esc(d.user.name)
+    : '予定データがまだ取り込まれていません';
+  var b = '';
+  if (d.pending && d.pending.length) {
+    b += '<div class="banner">新しい予定ファイルが取込待ちです（' + esc(d.pending[0]) + '）<button id="bImport">今すぐ取込</button></div>';
+  }
+  if (d.notice) b += '<div class="banner">' + esc(d.notice) + '</div>';
+  $('banners').innerHTML = b;
+  if ($('bImport')) $('bImport').onclick = doImport;
+}
+
+function doImport() {
+  $('menu').classList.add('hidden');
+  busy(true);
+  api('import').then(function (r) {
+    busy(false);
+    toast(r.message || r.error, 5000);
+    if (r.ok) reload();
+  });
+}
+
+$('btnReload').onclick = function () { reload(); };
+$('btnMenu').onclick = function (e) { e.stopPropagation(); $('menu').classList.toggle('hidden'); };
+document.addEventListener('click', function () { $('menu').classList.add('hidden'); });
+$('mImport').onclick = doImport;
+$('mLogout').onclick = logout;
+
+// ─── 絞り込み ───
+function weeksOf(rows) {
+  var w = {}; rows.forEach(function (r) { Object.keys(r.weeks).forEach(function (k) { w[k] = 1; }); });
+  return Object.keys(w).sort();
+}
+function wkLabel(k) { return Number(String(k).slice(4)) + '週'; }
+
+function renderWeekSeg() {
+  var ws = weeksOf(S.data.rows);
+  if (S.week !== 'all' && ws.indexOf(S.week) < 0) S.week = 'all';
+  $('segWeek').innerHTML = '<button data-v="all"' + (S.week === 'all' ? ' class="on"' : '') + '>全週</button>' +
+    ws.map(function (k) { return '<button data-v="' + k + '"' + (S.week === k ? ' class="on"' : '') + '>' + wkLabel(k) + '</button>'; }).join('');
+}
+function segClick(id, key) {
+  $(id).addEventListener('click', function (e) {
+    var b = e.target.closest('button'); if (!b) return;
+    S[key] = b.dataset.v;
+    Array.prototype.forEach.call(this.children, function (x) { x.classList.toggle('on', x === b); });
+    renderList();
+  });
+}
+segClick('segStatus', 'status'); segClick('segWeek', 'week');
+$('q').addEventListener('input', function () { S.q = this.value; renderList(); });
+
+function isDone(r) { return r.status === '一致' || r.status === '目視確認'; }
+function norm(s) { return String(s || '').normalize('NFKC').toLowerCase(); }
+
+// ─── 一覧 ───
+function renderList() {
+  var rows = S.data.rows;
+  var inWeek = rows.filter(function (r) { return S.week === 'all' || r.weeks[S.week]; });
+  var target = inWeek.filter(function (r) { return r.mode !== '対象外'; });
+  var done = target.filter(isDone).length, ng = target.filter(function (r) { return r.status === '不一致'; }).length;
+  $('prog').innerHTML = '照合済 <b>' + done + '</b> / ' + target.length + (ng ? '　<span style="color:var(--ng)">不一致 ' + ng + '</span>' : '') +
+    '　<span style="font-size:12px">対象外 ' + (inWeek.length - target.length) + '</span>';
+  $('pbar').style.width = target.length ? (done * 100 / target.length) + '%' : '0';
+
+  var q = norm(S.q);
+  var list = inWeek.filter(function (r) {
+    if (S.status === 'todo' && (isDone(r) || r.mode === '対象外')) return false;
+    if (S.status === 'ng' && r.status !== '不一致') return false;
+    if (q && norm(r.name + ' ' + r.cat2 + ' ' + r.hinban + ' ' + r.kobetsu + ' ' + r.code).indexOf(q) < 0) return false;
+    return true;
+  });
+  if (!list.length) {
+    $('list').innerHTML = '<div class="empty">' + (S.status === 'todo' && target.length ? 'すべて照合済みです' : '該当する商品はありません') + '</div>';
+    return;
+  }
+  var groups = {}, order = [];
+  list.forEach(function (r) { if (!groups[r.cat2]) { groups[r.cat2] = []; order.push(r.cat2); } groups[r.cat2].push(r); });
+  var byCat = {}; target.forEach(function (r) { var g = byCat[r.cat2] = byCat[r.cat2] || { n: 0, d: 0 }; g.n++; if (isDone(r)) g.d++; });
+  var single = order.length === 1;
+  $('list').innerHTML = order.map(function (c) {
+    var g = byCat[c] || { n: 0, d: 0 };
+    var opened = single || q || S.open[c] !== false;
+    return '<div class="grp"><h2 data-c="' + esc(c) + '"><span>' + (opened ? '▾ ' : '▸ ') + esc(c.replace(/^\d{3}/, '')) + '</span><span class="n">' + g.d + ' / ' + g.n + '</span></h2>' +
+      (opened ? groups[c].map(itemHtml).join('') : '') + '</div>';
+  }).join('');
+}
+
+function itemHtml(r) {
+  var cls = r.mode === '対象外' ? 'off' : (isDone(r) ? 'ok' : (r.status === '不一致' ? 'ng' : ''));
+  var wk = Object.keys(r.weeks).sort().map(function (k) { return wkLabel(k) + ' <b>' + r.weeks[k] + '</b>'; }).join('<br>');
+  var sub = [];
+  if (r.kobetsu) sub.push('<span class="tag kb">' + esc(r.kobetsu) + '</span>');
+  if (r.mode === '対象外') sub.push('<span class="tag">対象外・' + esc(r.reason) + '</span>');
+  else if (r.mode === '目視') sub.push('<span class="tag">目視</span>');
+  if (r.status === '不一致') sub.push('<span class="tag st-ng">不一致</span>');
+  else if (isDone(r)) sub.push('<span class="tag st-ok">' + (r.status === '目視確認' ? '目視済' : '照合済') + ' ' + esc(fmtAt(r.lastAt)) + '</span>');
+  if (r.shared && r.mode === 'JAN') sub.push('<span class="tag sh">同JAN他品種あり</span>');
+  sub.push('<span>' + esc(r.size) + '</span>');
+  return '<div class="item ' + cls + '" data-k="' + esc(r.key) + '"><div class="dot"></div><div class="main"><div class="nm">' + esc(r.name) +
+    '</div><div class="sub">' + sub.join('') + '</div></div><div class="wk">' + wk + '</div></div>';
+}
+
+$('list').addEventListener('click', function (e) {
+  var h = e.target.closest('h2');
+  if (h) { var c = h.dataset.c; S.open[c] = S.open[c] === false; renderList(); return; }
+  var it = e.target.closest('.item');
+  if (it) openSheet(it.dataset.k);
+});
+
+// ─── 商品シート ───
+function findRow(key) { return S.data.rows.filter(function (r) { return r.key === key; })[0]; }
+function janHtml(j) { return j ? esc(j.slice(0, -5)) + '<b>' + esc(j.slice(-5)) + '</b>' : '（なし）'; }
+
+function openSheet(key) {
+  var r = findRow(key); if (!r) return;
+  S.current = r;
+  var h = '<h3>' + esc(r.name) + '</h3>';
+  if (r.kobetsu) h += '<span class="tag kb">' + esc(r.kobetsu) + '</span> ';
+  h += '<span style="color:var(--sub);font-size:14px">' + esc(r.cat2.replace(/^\d{3}/, '')) + '</span>';
+  h += '<dl class="kv"><dt>JAN</dt><dd class="jan">' + janHtml(r.jan) + '</dd>' +
+       '<dt>品番</dt><dd>' + esc(r.hinban || '－') + ' <span style="color:var(--sub);font-size:13px">（参考）</span></dd>' +
+       '<dt>出荷</dt><dd>' + Object.keys(r.weeks).sort().map(function (k) { return wkLabel(k) + ' ' + r.weeks[k]; }).join('　') + '</dd>';
+  if (r.lastAt) h += '<dt>前回</dt><dd>' + esc(fmtAt(r.lastAt)) + ' ' + esc(r.lastBy) + '（' + esc(r.status) + '）' +
+                     (r.status === '不一致' && r.lastHit ? '<br><span style="font-size:13px">読取：' + esc(r.lastHit) + '</span>' : '') + '</dd>';
+  h += '</dl>';
+  if (r.mode === '対象外') {
+    h += '<div class="note m">この商品は照合の対象外です（' + esc(r.reason) + '）。</div><button class="btn sec" id="sClose">閉じる</button>';
+  } else if (r.mode === '目視') {
+    h += '<div class="note m">1つの商品に複数のラベルを使う商品です（各種あり）。JANでは判定しません。ラベルを目で確認してください。</div>' +
+         '<button class="btn pri" id="sEye">ラベルを目で確認した</button><button class="btn sec" id="sClose">閉じる</button>';
+  } else {
+    if (r.shared) {
+      var others = S.data.rows.filter(function (x) { return x.jan === r.jan && x.code !== r.code; })
+        .map(function (x) { return x.name; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
+      h += '<div class="note w">このJANは同じ農場の別品種と共用です。<b>JANが一致しても品種違いは見分けられません</b>。ラベルの品種名も目で確認してください。<br>共用：' +
+           esc(others.slice(0, 4).join('／')) + (others.length > 4 ? ' ほか' + (others.length - 4) + '件' : '') + '</div>';
+    }
+    h += '<button class="btn pri" id="sScan">カメラで読み取る</button>' +
+         '<div class="manual"><input class="t" id="sJan" inputmode="numeric" placeholder="JANを手入力（13桁）" maxlength="13"><button id="sJanGo">照合</button></div>' +
+         '<button class="btn sec" id="sClose" style="margin-top:10px">閉じる</button>';
+  }
+  $('sheet').innerHTML = h;
+  $('shade').classList.remove('hidden');
+  $('sClose').onclick = closeSheet;
+  if ($('sScan')) $('sScan').onclick = startScan;
+  if ($('sJanGo')) $('sJanGo').onclick = function () { submitCheck('JAN', $('sJan').value); };
+  if ($('sEye')) $('sEye').onclick = function () { submitCheck('目視', ''); };
+}
+function closeSheet() { $('shade').classList.add('hidden'); }
+$('shade').addEventListener('click', function (e) { if (e.target === this) closeSheet(); });
+
+// ─── スキャン ───
+var scanner = null, lastCode = '', lastAt = 0, scanning = false;
+
+function janValid(d) {
+  if (!/^\d{8}$|^\d{13}$/.test(d)) return false;
+  var digits = d.split('').map(Number), check = digits.pop(), sum = 0;
+  digits.reverse().forEach(function (n, i) { sum += n * (i % 2 === 0 ? 3 : 1); });
+  return (10 - sum % 10) % 10 === check;
+}
+function normJan(s) { var d = String(s || '').replace(/\D/g, ''); return d.length === 12 ? '0' + d : d; }
+
+function startScan() {
+  var r = S.current;
+  closeSheet();
+  $('scanTop').innerHTML = '<b>' + esc(r.name) + '</b>' + (r.kobetsu ? '［' + esc(r.kobetsu) + '］' : '') + '　JAN末尾 ' + esc(r.jan.slice(-5));
+  $('scan').classList.remove('hidden');
+  lastCode = ''; scanning = true;
+  if (MOCK) return;  // モックではカメラを起動しない（手入力で確認する）
+  var F = Html5QrcodeSupportedFormats;
+  scanner = new Html5Qrcode('reader', { formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A], verbose: false,
+                                        experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
+  scanner.start({ facingMode: 'environment' }, {
+    fps: 12,
+    qrbox: function (w, h) { return { width: Math.floor(Math.min(w * 0.85, 380)), height: Math.floor(Math.min(h * 0.3, 170)) }; }
+  }, onDecoded, function () {}).catch(function (e) {
+    stopScan();
+    toast('カメラを起動できませんでした。手入力で照合してください（' + e + '）', 6000);
+    openSheet(r.key);
+  });
+}
+
+/** 誤読を避けるため、チェックディジットが正しく同じ値が2回続いたときだけ採用 */
+function onDecoded(text) {
+  if (!scanning) return;
+  var d = normJan(text);
+  if (!janValid(d)) return;
+  var now = Date.now();
+  if (d === lastCode && now - lastAt < 2000) {
+    scanning = false;
+    stopScan().then(function () { submitCheck('JAN', d); });
+  } else { lastCode = d; lastAt = now; }
+}
+function stopScan() {
+  scanning = false;
+  $('scan').classList.add('hidden');
+  if (!scanner) return Promise.resolve();
+  var s = scanner; scanner = null;
+  return s.stop().catch(function () {}).then(function () { try { s.clear(); } catch (e) {} });
+}
+$('scanCancel').onclick = function () { stopScan(); };
+
+// ─── 照合 ───
+function submitCheck(method, jan) {
+  var r = S.current;
+  if (method === 'JAN') {
+    var d = normJan(jan);
+    if (!janValid(d)) { toast('JANの桁数かチェックディジットが正しくありません'); return; }
+    jan = d;
+  }
+  closeSheet(); busy(true);
+  api('check', { key: r.key, jan: jan, method: method }).then(function (res) {
+    busy(false);
+    if (!res.ok) { if (res.relogin) { logout(); } toast(res.error, 6000); return; }
+    r.status = res.result; r.lastAt = res.at; r.lastBy = res.by; r.lastScanned = res.scanned; r.lastHit = res.hit;
+    showResult(r, res);
+    renderList();
+  });
+}
+
+function showResult(r, res) {
+  var ok = res.result !== '不一致', el = $('result');
+  el.className = ok ? 'ok' : 'ng';
+  var h = '<div class="big">' + (ok ? '✓' : '✕') + '</div><div class="ttl">' + (res.result === '目視確認' ? '目視で確認しました' : ok ? '一致' : '不一致<div style="font-size:20px;margin-top:6px">ラベルが違います</div>') + '</div>';
+  h += '<div class="detail">予定：<b>' + esc(r.name) + '</b>［' + esc(r.kobetsu || '通常') + '］' + (r.jan ? '<br>JAN ' + esc(r.jan) : '');
+  if (!ok) h += '<br><br>読み取ったラベル：<b>' + esc(res.hit) + '</b><br>JAN ' + esc(res.scanned);
+  if (ok && r.shared && res.result === '一致') h += '<br><br>※同じJANの別品種があります。品種名も目で確認してください。';
+  h += '</div><div class="acts">';
+  if (!ok) h += '<button class="btn pri" id="rRetry">もう一度読む</button>';
+  h += '<button class="btn ' + (ok ? 'pri' : 'sec') + '" id="rBack">一覧へ戻る</button></div>';
+  el.innerHTML = h;
+  el.classList.remove('hidden');
+  try { navigator.vibrate && navigator.vibrate(ok ? 80 : [250, 120, 250]); } catch (e) {}
+  $('rBack').onclick = function () { el.classList.add('hidden'); };
+  if ($('rRetry')) $('rRetry').onclick = function () { el.classList.add('hidden'); startScan(); };
+}
+
+// ─── 起動 ───
+(function boot() {
+  $('lcode').value = load('lc_code') || '';
+  var start = function () {
+    S.session = load('lc_session');
+    if (S.session) reload(); else show('login');
+  };
+  if (MOCK) {
+    var s = document.createElement('script'); s.src = 'mock.js?' + Date.now(); s.onload = start; document.head.appendChild(s);
+  } else start();
+})();
+</script>
+</body>
+</html>
