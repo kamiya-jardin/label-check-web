@@ -245,7 +245,8 @@ input.q::-webkit-search-cancel-button { display: none; }
 'use strict';
 // ─── 設定：GASウェブアプリのURL（/exec で終わるもの） ───
 var API_URL = 'https://script.google.com/macros/s/AKfycbyR82rR1kMjVMNEOp9Zxz3Bwzd9kuJkW0eRGbBZLcO7Hp2sPb42-T3a-44YSoBdNMEnuQ/exec';
-var VERSION = '20260930c';
+var VERSION = '20260930d';
+var API_TIMEOUT = 25000;   // GASの起動待ち＋電波の悪さを見込む
 
 var MOCK = /[?&]mock=1/.test(location.search);
 var S = { session: null, data: null, status: 'todo', week: 'all', q: '', cat: '', current: null, open: {} };
@@ -260,13 +261,35 @@ function toast(msg, ms) {
 }
 function busy(on) { $('loading').classList.toggle('hidden', !on); }
 
+/** ログインと読み込みは何度やっても害がないので、通信・サーバーの一時エラーは2秒おいて1回だけ自動でやり直す */
 function api(action, payload) {
+  return apiOnce(action, payload).then(function (r) {
+    if (r.ok || !r.net || (action !== 'login' && action !== 'data')) return r;
+    $('loading').textContent = 'つながりにくいので再接続しています…';
+    return new Promise(function (ok) { setTimeout(ok, 2000); }).then(function () { return apiOnce(action, payload); })
+      .then(function (r2) { $('loading').textContent = '読み込み中…'; return r2; });
+  });
+}
+
+function apiOnce(action, payload) {
   var body = Object.assign({ action: action, session: S.session }, payload || {});
   if (MOCK) return window.mockApi(body);
   if (!API_URL) return Promise.resolve({ ok: false, error: 'API_URL が未設定です' });
-  return fetch(API_URL, { method: 'POST', body: JSON.stringify(body) })
-    .then(function (r) { return r.json(); })
-    .catch(function () { return { ok: false, net: true, error: '通信できませんでした。電波の良い場所で再度お試しください' }; });
+  // 時間切れを設ける（GASの起動待ち＋電波の悪さを見込んで25秒）。原因ごとに言い分ける
+  var ctl = window.AbortController ? new AbortController() : null;
+  var timer = ctl ? setTimeout(function () { ctl.abort(); }, API_TIMEOUT) : null;
+  return fetch(API_URL, { method: 'POST', body: JSON.stringify(body), signal: ctl ? ctl.signal : undefined })
+    .then(function (r) {
+      return r.text().then(function (txt) {
+        try { return JSON.parse(txt); }
+        catch (e) { return { ok: false, net: true, server: true, error: 'サーバーが混み合っているか、一時的なエラーです（HTTP ' + r.status + '）。少し待って再度お試しください' }; }
+      });
+    })
+    .catch(function (e) {
+      var timeout = e && e.name === 'AbortError';
+      return { ok: false, net: true, error: timeout ? '応答がありません（' + API_TIMEOUT / 1000 + '秒）。電波の良い場所で再度お試しください' : '通信できませんでした。電波の良い場所で再度お試しください' };
+    })
+    .then(function (r) { if (timer) clearTimeout(timer); return r; });
 }
 
 function show(id) {
@@ -333,7 +356,7 @@ function onData(r, stale) {
   show('main');
   renderHeader(); renderWeekSeg(); renderCatSel(); renderList();
   flushQueue();
-  prepareDecoder();
+  setTimeout(prepareDecoder, 3000);
 }
 
 // ─── ヘッダー ───
