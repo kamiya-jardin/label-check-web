@@ -8,8 +8,9 @@
 <meta name="apple-mobile-web-app-title" content="ラベル照合">
 <meta name="theme-color" content="#1f6f43">
 <title>ラベル照合</title>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"
-        integrity="sha384-c9d8RFSL+u3exBOJ4Yp3HUJXS4znl9f+z66d1y54ig+ea249SpqR+w1wyvXz/lk+" crossorigin="anonymous"></script>
+<!-- バーコード読取：端末内蔵のBarcodeDetector（Android等）が無ければ ZXing-C++(WebAssembly) を使う -->
+<script src="https://cdn.jsdelivr.net/npm/barcode-detector@3.2.2/dist/iife/ponyfill.js"
+        integrity="sha384-KJVUIUGb4pmfpWXfD8j3y9ARn6KoGC2vPC/wNUX1O1ZkYemh0BsuvsmdEU2+wS7O" crossorigin="anonymous"></script>
 <style>
 :root {
   --bg: #f4f5f2; --card: #ffffff; --ink: #1c211d; --sub: #5d665f; --line: #d9ddd6;
@@ -66,7 +67,16 @@ header .fresh { font-size: 12px; opacity: .9; padding-bottom: 8px; line-height: 
 .seg { display: inline-flex; background: var(--mute-bg); border-radius: 10px; padding: 3px; }
 .seg button { border: 0; background: none; padding: 7px 12px; border-radius: 8px; font-size: 14px; color: var(--sub); cursor: pointer; }
 .seg button.on { background: var(--card); color: var(--ink); font-weight: 700; box-shadow: 0 1px 2px rgba(0,0,0,.12); }
-input.q { flex: 1; min-width: 140px; font-size: 16px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
+.qwrap { flex: 1; min-width: 140px; position: relative; }
+input.q { width: 100%; font-size: 16px; padding: 9px 40px 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--ink); }
+input.q::-webkit-search-cancel-button { display: none; }
+.qclear { position: absolute; right: 4px; top: 50%; transform: translateY(-50%); width: 34px; height: 34px; border: 0; border-radius: 50%;
+  background: var(--mute-bg); color: var(--sub); font-size: 18px; line-height: 1; cursor: pointer; }
+.btn-adv { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 10px; padding: 9px 12px; font-size: 14px; cursor: pointer; white-space: nowrap; }
+.btn-adv.on { border-color: var(--brand); color: var(--brand); font-weight: 700; }
+.adv { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; }
+.adv label { font-size: 13px; color: var(--sub); display: block; margin-bottom: 4px; }
+.adv select { width: 100%; font-size: 16px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); }
 .prog { font-size: 14px; color: var(--sub); margin: 4px 0 6px; }
 .prog b { color: var(--ink); font-size: 16px; }
 .pbar { height: 6px; background: var(--mute-bg); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
@@ -115,8 +125,13 @@ input.q { flex: 1; min-width: 140px; font-size: 16px; padding: 9px 12px; border:
 #scan { position: fixed; inset: 0; background: #000; z-index: 30; display: flex; flex-direction: column; }
 #scan .top { color: #fff; padding: 14px 16px; font-size: 15px; line-height: 1.4; }
 #scan .top b { display: block; font-size: 17px; }
-#reader { flex: 1; width: 100%; overflow: hidden; }
-#reader video { object-fit: cover; }
+#reader { flex: 1; width: 100%; overflow: hidden; position: relative; background: #000; }
+#reader video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+#guide { position: absolute; left: 7%; right: 7%; top: 50%; height: 26%; transform: translateY(-50%);
+  border: 3px solid #fff; border-radius: 12px; box-shadow: 0 0 0 100vmax rgba(0,0,0,.45); }
+#guide.hit { border-color: #5cc07a; }
+#scanInfo { position: absolute; left: 8px; bottom: 8px; color: #bbb; font-size: 11px; }
+#torch { position: absolute; right: 12px; bottom: 12px; border: 0; border-radius: 22px; padding: 10px 14px; background: rgba(255,255,255,.2); color: #fff; font-size: 14px; }
 #scan .bottom { padding: 14px 16px calc(14px + env(safe-area-inset-bottom)); }
 #scan .hint { color: #ddd; font-size: 14px; text-align: center; margin-bottom: 10px; }
 
@@ -180,7 +195,17 @@ input.q { flex: 1; min-width: 140px; font-size: 16px; padding: 9px 12px; border:
       </div>
       <div class="seg" id="segWeek"></div>
     </div>
-    <div class="bar"><input class="q" id="q" type="search" placeholder="商品名・分類・品番で検索"></div>
+    <div class="bar">
+      <div class="qwrap">
+        <input class="q" id="q" type="search" placeholder="商品名・分類・品番で検索" enterkeyhint="search">
+        <button class="qclear hidden" id="qClear" aria-label="検索語を消す">×</button>
+      </div>
+      <button class="btn-adv" id="btnAdv">詳細</button>
+    </div>
+    <div class="adv hidden" id="adv">
+      <label for="fCat">商品分類2</label>
+      <select id="fCat"></select>
+    </div>
     <div class="prog" id="prog"></div>
     <div class="pbar"><i id="pbar" style="width:0"></i></div>
     <div id="list"></div>
@@ -194,9 +219,14 @@ input.q { flex: 1; min-width: 140px; font-size: 16px; padding: 9px 12px; border:
 <!-- スキャン -->
 <section id="scan" class="hidden">
   <div class="top" id="scanTop"></div>
-  <div id="reader"></div>
+  <div id="reader">
+    <video id="video" playsinline muted autoplay></video>
+    <div id="guide"></div>
+    <div id="scanInfo"></div>
+    <button id="torch" class="hidden">ライト</button>
+  </div>
   <div class="bottom">
-    <div class="hint">ラベル裏面のバーコードを枠に合わせてください</div>
+    <div class="hint">バーコードを枠いっぱいに大きく写してください（近づけてピントが合うまで待つ）</div>
     <button class="btn sec" id="scanCancel">やめる</button>
   </div>
 </section>
@@ -210,10 +240,10 @@ input.q { flex: 1; min-width: 140px; font-size: 16px; padding: 9px 12px; border:
 'use strict';
 // ─── 設定：GASウェブアプリのURL（/exec で終わるもの） ───
 var API_URL = 'https://script.google.com/macros/s/AKfycbyR82rR1kMjVMNEOp9Zxz3Bwzd9kuJkW0eRGbBZLcO7Hp2sPb42-T3a-44YSoBdNMEnuQ/exec';
-var VERSION = '20260930a';
+var VERSION = '20260930b';
 
 var MOCK = /[?&]mock=1/.test(location.search);
-var S = { session: null, data: null, status: 'todo', week: 'all', q: '', current: null, open: {} };
+var S = { session: null, data: null, status: 'todo', week: 'all', q: '', cat: '', current: null, open: {} };
 var $ = function (id) { return document.getElementById(id); };
 var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"']/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]; }); };
 function store(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
@@ -231,7 +261,7 @@ function api(action, payload) {
   if (!API_URL) return Promise.resolve({ ok: false, error: 'API_URL が未設定です' });
   return fetch(API_URL, { method: 'POST', body: JSON.stringify(body) })
     .then(function (r) { return r.json(); })
-    .catch(function () { return { ok: false, error: '通信できませんでした。電波の良い場所で再度お試しください' }; });
+    .catch(function () { return { ok: false, net: true, error: '通信できませんでした。電波の良い場所で再度お試しください' }; });
 }
 
 function show(id) {
@@ -266,7 +296,9 @@ function reload(farm) {
 function onData(r) {
   S.data = r;
   show('main');
-  renderHeader(); renderWeekSeg(); renderList();
+  renderHeader(); renderWeekSeg(); renderCatSel(); renderList();
+  flushQueue();
+  prepareDecoder();
 }
 
 // ─── ヘッダー ───
@@ -336,7 +368,31 @@ function segClick(id, key) {
   });
 }
 segClick('segStatus', 'status'); segClick('segWeek', 'week');
-$('q').addEventListener('input', function () { S.q = this.value; renderList(); });
+$('q').addEventListener('input', function () { S.q = this.value; $('qClear').classList.toggle('hidden', !S.q); renderList(); });
+$('q').addEventListener('keydown', function (e) { if (e.key === 'Enter') this.blur(); });
+$('qClear').onclick = function () { $('q').value = ''; S.q = ''; this.classList.add('hidden'); renderList(); };
+$('btnAdv').onclick = function () {
+  var open = $('adv').classList.toggle('hidden') === false;
+  this.classList.toggle('on', open || !!S.cat);
+};
+$('fCat').onchange = function () {
+  S.cat = this.value;
+  $('btnAdv').textContent = S.cat ? '詳細（1）' : '詳細';
+  $('btnAdv').classList.toggle('on', true);
+  renderList();
+};
+
+/** 分類2の選択肢（今の農場の予定にあるものだけ・件数つき） */
+function renderCatSel() {
+  var cnt = {}, order = [];
+  S.data.rows.forEach(function (r) { if (!(r.cat2 in cnt)) { cnt[r.cat2] = 0; order.push(r.cat2); } cnt[r.cat2]++; });
+  if (S.cat && !(S.cat in cnt)) S.cat = '';
+  $('fCat').innerHTML = '<option value="">すべての分類</option>' + order.map(function (c) {
+    return '<option value="' + esc(c) + '"' + (c === S.cat ? ' selected' : '') + '>' + esc(c.replace(/^\d{3}/, '')) + '（' + cnt[c] + '）</option>';
+  }).join('');
+  $('btnAdv').textContent = S.cat ? '詳細（1）' : '詳細';
+  $('btnAdv').classList.toggle('on', !!S.cat || !$('adv').classList.contains('hidden'));
+}
 
 function isDone(r) { return r.status === '一致' || r.status === '目視確認'; }
 function norm(s) { return String(s || '').normalize('NFKC').toLowerCase(); }
@@ -344,7 +400,7 @@ function norm(s) { return String(s || '').normalize('NFKC').toLowerCase(); }
 // ─── 一覧 ───
 function renderList() {
   var rows = S.data.rows;
-  var inWeek = rows.filter(function (r) { return S.week === 'all' || r.weeks[S.week]; });
+  var inWeek = rows.filter(function (r) { return (S.week === 'all' || r.weeks[S.week]) && (!S.cat || r.cat2 === S.cat); });
   var target = inWeek.filter(function (r) { return r.mode !== '対象外'; });
   var done = target.filter(isDone).length, ng = target.filter(function (r) { return r.status === '不一致'; }).length;
   $('prog').innerHTML = '照合済 <b>' + done + '</b> / ' + target.length + (ng ? '　<span style="color:var(--ng)">不一致 ' + ng + '</span>' : '') +
@@ -439,7 +495,10 @@ function closeSheet() { $('shade').classList.add('hidden'); }
 $('shade').addEventListener('click', function (e) { if (e.target === this) closeSheet(); });
 
 // ─── スキャン ───
-var scanner = null, lastCode = '', lastAt = 0, scanning = false;
+var WASM_URL = 'https://cdn.jsdelivr.net/npm/zxing-wasm@3.1.3/dist/reader/zxing_reader.wasm';
+var WASM_SRI = 'sha256-Lr2gipPuo+/Ng5nNprJ25qCx3k/sYLTYmIoEfeTG0bo=';
+var FORMATS = ['ean_13', 'ean_8', 'upc_a'];
+var detectorP = null, stream = null, scanning = false, scanStat = { frames: 0, ms: 0 };
 
 function janValid(d) {
   if (!/^\d{8}$|^\d{13}$/.test(d)) return false;
@@ -449,47 +508,125 @@ function janValid(d) {
 }
 function normJan(s) { var d = String(s || '').replace(/\D/g, ''); return d.length === 12 ? '0' + d : d; }
 
+/**
+ * 読取器の用意（ログイン後に裏で1回だけ）。端末内蔵のBarcodeDetectorがJANに対応していればそれを使い、
+ * 無ければ ZXing-C++(WebAssembly 1.1MB) を完全性チェック付きで取得して使う。
+ */
+function prepareDecoder() {
+  if (detectorP) return detectorP;
+  detectorP = (function () {
+    if ('BarcodeDetector' in window && window.BarcodeDetector.getSupportedFormats) {
+      return window.BarcodeDetector.getSupportedFormats().then(function (f) {
+        if (f.indexOf('ean_13') >= 0) return { d: new window.BarcodeDetector({ formats: FORMATS }), kind: '内蔵' };
+        return null;
+      }).catch(function () { return null; });
+    }
+    return Promise.resolve(null);
+  })().then(function (native) {
+    if (native) return native;
+    var API = window.BarcodeDetectionAPI;
+    if (!API) throw new Error('読取ライブラリを読み込めませんでした');
+    return fetch(WASM_URL, { integrity: WASM_SRI }).then(function (r) { return r.arrayBuffer(); }).then(function (buf) {
+      return API.prepareZXingModule({ overrides: { wasmBinary: buf }, fireImmediately: true });
+    }).then(function () { return { d: new API.BarcodeDetector({ formats: FORMATS }), kind: 'ZXing' }; });
+  });
+  detectorP.catch(function () { detectorP = null; });  // 失敗したら次回やり直す
+  return detectorP;
+}
+
 function startScan() {
   var r = S.current;
   closeSheet();
-  $('scanTop').innerHTML = '<b>' + esc(r.name) + '</b>' + (r.kobetsu ? '［' + esc(r.kobetsu) + '］' : '') + '　JAN末尾 ' + esc(r.jan.slice(-5));
+  $('scanTop').innerHTML = '<b>' + esc(r.name) + '</b>［' + esc(r.kobetsu || '通常') + '］　JAN末尾 ' + esc(r.jan.slice(-5));
   $('scan').classList.remove('hidden');
-  lastCode = ''; scanning = true;
-  if (MOCK) return;  // モックではカメラを起動しない（手入力で確認する）
-  var F = Html5QrcodeSupportedFormats;
-  scanner = new Html5Qrcode('reader', { formatsToSupport: [F.EAN_13, F.EAN_8, F.UPC_A], verbose: false,
-                                        experimentalFeatures: { useBarCodeDetectorIfSupported: true } });
-  scanner.start({ facingMode: 'environment' }, {
-    fps: 12,
-    qrbox: function (w, h) { return { width: Math.floor(Math.min(w * 0.85, 380)), height: Math.floor(Math.min(h * 0.3, 170)) }; }
-  }, onDecoded, function () {}).catch(function (e) {
+  $('guide').classList.remove('hit');
+  $('scanInfo').textContent = '起動中…';
+  $('torch').classList.add('hidden');
+  scanning = true; scanStat = { frames: 0, ms: 0 };
+  if (MOCK) { $('scanInfo').textContent = 'モック：カメラは起動しません'; return; }
+  var fail = function (e) {
     stopScan();
-    toast('カメラを起動できませんでした。手入力で照合してください（' + e + '）', 6000);
+    toast('カメラを起動できませんでした。手入力で照合してください（' + (e && e.message || e) + '）', 7000);
     openSheet(r.key);
-  });
+  };
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return fail('この端末はカメラに対応していません');
+  // 高解像度で開く（ラベルのJANは約25mm。画面上で250px以上に写らないと読めないことを実測済み）
+  navigator.mediaDevices.getUserMedia({ audio: false, video: {
+    facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } })
+    .then(function (s) {
+      if (!scanning) { s.getTracks().forEach(function (t) { t.stop(); }); return; }
+      stream = s;
+      var v = $('video'); v.srcObject = s;
+      var track = s.getVideoTracks()[0], caps = track.getCapabilities ? track.getCapabilities() : {};
+      if (caps.focusMode && caps.focusMode.indexOf('continuous') >= 0) track.applyConstraints({ advanced: [{ focusMode: 'continuous' }] }).catch(function () {});
+      if (caps.torch) $('torch').classList.remove('hidden');
+      return v.play().then(function () { return prepareDecoder(); }).then(function (det) {
+        loop(det, r);
+      });
+    }).catch(fail);
 }
 
-/** 誤読を避けるため、チェックディジットが正しく同じ値が2回続いたときだけ採用 */
-function onDecoded(text) {
-  if (!scanning) return;
-  var d = normJan(text);
-  if (!janValid(d)) return;
-  var now = Date.now();
-  if (d === lastCode && now - lastAt < 2000) {
-    scanning = false;
-    stopScan().then(function () { submitCheck('JAN', d); });
-  } else { lastCode = d; lastAt = now; }
+/** 枠の中を「縮小せずに」切り出して読む。数回に1回は画面全体も読む（枠から外れていても拾う） */
+function loop(det, r) {
+  var v = $('video'), canvas = document.createElement('canvas'), ctx = canvas.getContext('2d', { willReadFrequently: true });
+  var tick = function () {
+    if (!scanning) return;
+    if (v.readyState < 2 || !v.videoWidth) { setTimeout(tick, 100); return; }
+    var vw = v.videoWidth, vh = v.videoHeight, rd = $('reader').getBoundingClientRect(), gd = $('guide').getBoundingClientRect();
+    var sc = Math.max(rd.width / vw, rd.height / vh), ox = (rd.width - vw * sc) / 2, oy = (rd.height - vh * sc) / 2;
+    var full = scanStat.frames % 5 === 4;
+    var sx = full ? 0 : Math.max(0, (gd.left - rd.left - ox) / sc - 20), sy = full ? 0 : Math.max(0, (gd.top - rd.top - oy) / sc - 20);
+    var sw = full ? vw : Math.min(vw - sx, gd.width / sc + 40), sh = full ? vh : Math.min(vh - sy, gd.height / sc + 40);
+    canvas.width = Math.round(sw); canvas.height = Math.round(sh);
+    ctx.drawImage(v, sx, sy, sw, sh, 0, 0, canvas.width, canvas.height);
+    var t0 = performance.now();
+    det.d.detect(canvas).then(function (codes) {
+      scanStat.frames++; scanStat.ms += performance.now() - t0;
+      $('scanInfo').textContent = det.kind + '　' + vw + '×' + vh + '　' + Math.round(scanStat.ms / scanStat.frames) + 'ms/回';
+      for (var i = 0; i < codes.length; i++) {
+        var d = normJan(codes[i].rawValue);
+        if (janValid(d)) {            // チェックディジットが正しければ1回で採用（誤読は判定画面で分かる）
+          scanning = false;
+          $('guide').classList.add('hit');
+          stopScan();
+          submitCheck('JAN', d);
+          return;
+        }
+      }
+      setTimeout(tick, 30);
+    }).catch(function () { setTimeout(tick, 100); });
+  };
+  tick();
 }
+
 function stopScan() {
   scanning = false;
   $('scan').classList.add('hidden');
-  if (!scanner) return Promise.resolve();
-  var s = scanner; scanner = null;
-  return s.stop().catch(function () {}).then(function () { try { s.clear(); } catch (e) {} });
+  if (stream) { stream.getTracks().forEach(function (t) { t.stop(); }); stream = null; }
+  $('video').srcObject = null;
 }
 $('scanCancel').onclick = function () { stopScan(); };
+var torchOn = false;
+$('torch').onclick = function () {
+  if (!stream) return;
+  torchOn = !torchOn;
+  stream.getVideoTracks()[0].applyConstraints({ advanced: [{ torch: torchOn }] }).catch(function () {});
+  this.textContent = torchOn ? 'ライト消' : 'ライト';
+};
 
 // ─── 照合 ───
+// 判定は手元で即時に出す（予定JANは端末にある）。記録の送信は後ろで行い、電波が悪くても待たせない。
+// 送れなかった分は端末に溜め、次の操作・更新・30秒ごとに再送する。
+function localHit(jan, r) {
+  var seen = [];
+  S.data.rows.forEach(function (x) {
+    var l = x.name + '［' + (x.kobetsu || '通常') + '］';
+    if (x.jan === jan && seen.indexOf(l) < 0) seen.push(l);
+  });
+  if (!seen.length) return 'この農場の今回の出荷予定にないJAN';
+  return seen.slice(0, 3).join(' / ') + (seen.length > 3 ? ' ほか' + (seen.length - 3) + '件' : '');
+}
+
 function submitCheck(method, jan) {
   var r = S.current;
   if (method === 'JAN') {
@@ -497,13 +634,50 @@ function submitCheck(method, jan) {
     if (!janValid(d)) { toast('JANの桁数かチェックディジットが正しくありません'); return; }
     jan = d;
   }
-  closeSheet(); busy(true);
-  api('check', { key: r.key, jan: jan, method: method }).then(function (res) {
-    busy(false);
-    if (!res.ok) { if (res.relogin) { logout(); } toast(res.error, 6000); return; }
-    r.status = res.result; r.lastAt = res.at; r.lastBy = res.by; r.lastScanned = res.scanned; r.lastHit = res.hit;
-    showResult(r, res);
-    renderList();
+  closeSheet();
+  var result = method === '目視' ? '目視確認' : (jan === r.jan ? '一致' : '不一致');
+  var res = { result: result, scanned: method === '目視' ? '' : jan, hit: result === '不一致' ? localHit(jan, r) : '', at: Date.now(), by: S.data.user.name };
+  r.status = res.result; r.lastAt = res.at; r.lastBy = res.by; r.lastScanned = res.scanned; r.lastHit = res.hit;
+  showResult(r, res);
+  renderList();
+  var q = readQueue();
+  q.push({ key: r.key, jan: jan, method: method, at: res.at, farm: S.data.farm });
+  writeQueue(q);
+  flushQueue();
+}
+
+function readQueue() { try { return JSON.parse(load('lc_queue') || '[]'); } catch (e) { return []; } }
+function writeQueue(q) { store('lc_queue', q.length ? JSON.stringify(q) : null); renderQueue(); }
+function renderQueue() {
+  var n = readQueue().length, el = $('qBanner');
+  if (!n) { if (el) el.remove(); return; }
+  if (!el) {
+    el = document.createElement('div'); el.id = 'qBanner'; el.className = 'banner';
+    $('banners').parentNode.insertBefore(el, $('banners'));
+  }
+  el.innerHTML = '未送信の照合記録 ' + n + '件（電波が戻ると自動で送ります）<button id="qSend">今すぐ送る</button>';
+  $('qSend').onclick = flushQueue;
+}
+
+var flushing = false, flushTimer = null;
+function flushQueue() {
+  if (flushing || !S.session) { renderQueue(); return; }
+  var q = readQueue();
+  if (!q.length) { renderQueue(); return; }
+  flushing = true;
+  var item = q[0];
+  api('check', item).then(function (res) {
+    flushing = false;
+    if (res.net) { renderQueue(); clearTimeout(flushTimer); flushTimer = setTimeout(flushQueue, 30000); return; }
+    if (res.relogin) { renderQueue(); logout(); toast('ログインし直してください。未送信の記録は残っています', 6000); return; }
+    writeQueue(readQueue().slice(1));
+    if (!res.ok) {
+      // サーバーが受け付けなかった（予定の入れ替わり等）→ 手元の表示も戻す
+      var r = S.data && S.data.rows.filter(function (x) { return x.key === item.key; })[0];
+      if (r && r.lastAt === item.at) { r.status = ''; r.lastAt = 0; renderList(); }
+      toast('記録できませんでした：' + res.error, 7000);
+    }
+    flushQueue();
   });
 }
 
