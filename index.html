@@ -91,6 +91,8 @@ input.q::-webkit-search-cancel-button { display: none; }
 .item.ok .dot { background: var(--ok); border-color: var(--ok); }
 .item.ng { border-color: var(--ng); background: var(--ng-bg); }
 .item.ng .dot { background: var(--ng); border-color: var(--ng); }
+.item.eye { border-color: var(--warn); }
+.item.eye .dot { background: var(--warn-bg); border-color: var(--warn); }
 .item.off { opacity: .55; }
 .item.off .dot { border-style: dashed; }
 .item .main { flex: 1; min-width: 0; }
@@ -139,6 +141,9 @@ input.q::-webkit-search-cancel-button { display: none; }
 #result { position: fixed; inset: 0; z-index: 40; display: flex; flex-direction: column; justify-content: center; padding: 24px 16px; }
 #result.ok { background: var(--ok); color: #fff; }
 #result.ng { background: var(--ng); color: #fff; }
+#result.eye { background: #9a6700; color: #fff; }
+#result .kvb { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 8px 0; font-size: 15px; }
+#result .kvb b { font-size: 22px; font-family: ui-monospace, Menlo, Consolas, monospace; }
 #result .big { font-size: 64px; text-align: center; line-height: 1; }
 #result .ttl { font-size: 30px; font-weight: 800; text-align: center; margin: 10px 0 18px; }
 #result .detail { background: rgba(255,255,255,.15); border-radius: 12px; padding: 12px 14px; font-size: 15px; line-height: 1.6; word-break: break-all; }
@@ -240,7 +245,7 @@ input.q::-webkit-search-cancel-button { display: none; }
 'use strict';
 // ─── 設定：GASウェブアプリのURL（/exec で終わるもの） ───
 var API_URL = 'https://script.google.com/macros/s/AKfycbyR82rR1kMjVMNEOp9Zxz3Bwzd9kuJkW0eRGbBZLcO7Hp2sPb42-T3a-44YSoBdNMEnuQ/exec';
-var VERSION = '20260930b';
+var VERSION = '20260930c';
 
 var MOCK = /[?&]mock=1/.test(location.search);
 var S = { session: null, data: null, status: 'todo', week: 'all', q: '', cat: '', current: null, open: {} };
@@ -272,7 +277,7 @@ function show(id) {
 $('lbtn').onclick = function () {
   $('lerr').textContent = '';
   busy(true);
-  api('login', { code: $('lcode').value, pass: $('lpass').value }).then(function (r) {
+  api('login', { code: $('lcode').value, pass: $('lpass').value, farm: load('lc_farm') || '' }).then(function (r) {
     busy(false);
     if (!r.ok) { $('lerr').textContent = r.error; return; }
     S.session = r.session; store('lc_session', r.session); store('lc_code', $('lcode').value);
@@ -282,19 +287,49 @@ $('lbtn').onclick = function () {
 };
 $('lpass').addEventListener('keydown', function (e) { if (e.key === 'Enter') $('lbtn').click(); });
 
-function logout() { S.session = null; S.data = null; store('lc_session', null); show('login'); }
+function logout() { S.session = null; S.data = null; store('lc_session', null); store('lc_data', null); show('login'); }
 
-function reload(farm) {
-  busy(true);
-  return api('data', { farm: farm || (S.data && S.data.farm) }).then(function (r) {
+function reload(farm, quiet) {
+  if (!quiet) busy(true);
+  return api('data', { farm: farm || (S.data && S.data.farm) || load('lc_farm') || '' }).then(function (r) {
     busy(false);
-    if (!r.ok) { if (r.relogin) { logout(); toast(r.error); } else toast(r.error, 5000); return; }
+    if (!r.ok) {
+      if (r.relogin) { logout(); toast(r.error); }
+      else { if (S.stale) setStale(false, '更新できませんでした（前回のデータを表示中）'); toast(r.error, 5000); }
+      return;
+    }
     onData(r);
   });
 }
 
-function onData(r) {
+/** 前回データで先に表示している間の目印 */
+function setStale(on, msg) {
+  S.stale = on;
+  var el = $('staleBar');
+  if (!on && !msg) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'staleBar'; el.className = 'banner'; $('banners').parentNode.insertBefore(el, $('banners')); }
+  el.textContent = msg || '前回のデータを表示中（最新を読み込んでいます…）';
+}
+
+/** 未送信の照合を最新データの上に重ねる（送信前に更新しても表示が戻らないように） */
+function applyQueue(r) {
+  readQueue().forEach(function (q) {
+    var row = r.rows.filter(function (x) { return x.key === q.key; })[0];
+    if (!row || (row.lastAt && row.lastAt >= q.at)) return;
+    row.status = q.method === '品番' ? '品番確認' : (q.jan === row.jan ? '一致' : '不一致');
+    row.lastAt = q.at; row.lastBy = r.user.name;
+  });
+}
+
+function onData(r, stale) {
+  if (!stale) {
+    applyQueue(r);
+    try { store('lc_data', JSON.stringify(r)); } catch (e) {}
+    if (r.farm) store('lc_farm', r.farm);
+  }
+  fixRows(r);
   S.data = r;
+  setStale(!!stale);
   show('main');
   renderHeader(); renderWeekSeg(); renderCatSel(); renderList();
   flushQueue();
@@ -394,7 +429,19 @@ function renderCatSel() {
   $('btnAdv').classList.toggle('on', !!S.cat || !$('adv').classList.contains('hidden'));
 }
 
-function isDone(r) { return r.status === '一致' || r.status === '目視確認'; }
+/** 同JAN他品種あり・各種あり（r.eye）は「JAN一致＋品番確認」で完了。それ以外はJAN一致で完了 */
+function isDone(r) { return r.status === '品番確認' || r.status === '目視確認' || (r.status === '一致' && !r.eye); }
+function waitEye(r) { return r.status === '一致' && r.eye; }
+/** 旧版の端末キャッシュ（eye/multiが無い）を補う */
+function fixRows(d) {
+  (d.rows || []).forEach(function (r) {
+    if (r.mode === '目視') { r.mode = 'JAN'; r.multi = true; }
+    if (r.multi === undefined) r.multi = String(r.reason || '').indexOf('各種あり') >= 0;
+    if (r.eye === undefined) r.eye = r.mode !== '対象外' && (r.shared || r.multi);
+  });
+}
+var PH_HIN = ['', '品番なし', '各種あり', '未作成'];
+function hinHtml(h) { return PH_HIN.indexOf(String(h || '').trim()) >= 0 ? esc(h || '－') : '<b>' + esc(h) + '</b>'; }
 function norm(s) { return String(s || '').normalize('NFKC').toLowerCase(); }
 
 // ─── 一覧 ───
@@ -431,15 +478,16 @@ function renderList() {
 }
 
 function itemHtml(r) {
-  var cls = r.mode === '対象外' ? 'off' : (isDone(r) ? 'ok' : (r.status === '不一致' ? 'ng' : ''));
+  var cls = r.mode === '対象外' ? 'off' : (isDone(r) ? 'ok' : (r.status === '不一致' ? 'ng' : (waitEye(r) ? 'eye' : '')));
   var wk = Object.keys(r.weeks).sort().map(function (k) { return wkLabel(k) + ' <b>' + r.weeks[k] + '</b>'; }).join('<br>');
   var sub = [];
   if (r.kobetsu) sub.push('<span class="tag kb">' + esc(r.kobetsu) + '</span>');
   if (r.mode === '対象外') sub.push('<span class="tag">対象外・' + esc(r.reason) + '</span>');
-  else if (r.mode === '目視') sub.push('<span class="tag">目視</span>');
   if (r.status === '不一致') sub.push('<span class="tag st-ng">不一致</span>');
-  else if (isDone(r)) sub.push('<span class="tag st-ok">' + (r.status === '目視確認' ? '目視済' : '照合済') + ' ' + esc(fmtAt(r.lastAt)) + '</span>');
-  if (r.shared && r.mode === 'JAN') sub.push('<span class="tag sh">同JAN他品種あり</span>');
+  else if (waitEye(r)) sub.push('<span class="tag sh">JAN一致・品番確認待ち</span>');
+  else if (isDone(r)) sub.push('<span class="tag st-ok">照合済 ' + esc(fmtAt(r.lastAt)) + '</span>');
+  if (r.mode === 'JAN' && r.multi) sub.push('<span class="tag sh">複数ラベル</span>');
+  else if (r.mode === 'JAN' && r.shared) sub.push('<span class="tag sh">同JAN他品種あり</span>');
   sub.push('<span>' + esc(r.size) + '</span>');
   return '<div class="item ' + cls + '" data-k="' + esc(r.key) + '"><div class="dot"></div><div class="main"><div class="nm">' + esc(r.name) +
     '</div><div class="sub">' + sub.join('') + '</div></div><div class="wk">' + wk + '</div></div>';
@@ -463,24 +511,24 @@ function openSheet(key) {
   if (r.kobetsu) h += '<span class="tag kb">' + esc(r.kobetsu) + '</span> ';
   h += '<span style="color:var(--sub);font-size:14px">' + esc(r.cat2.replace(/^\d{3}/, '')) + '</span>';
   h += '<dl class="kv"><dt>JAN</dt><dd class="jan">' + janHtml(r.jan) + '</dd>' +
-       '<dt>品番</dt><dd>' + esc(r.hinban || '－') + ' <span style="color:var(--sub);font-size:13px">（参考）</span></dd>' +
+       '<dt>品番</dt><dd class="jan">' + hinHtml(r.hinban) + '</dd>' +
        '<dt>出荷</dt><dd>' + Object.keys(r.weeks).sort().map(function (k) { return wkLabel(k) + ' ' + r.weeks[k]; }).join('　') + '</dd>';
   if (r.lastAt) h += '<dt>前回</dt><dd>' + esc(fmtAt(r.lastAt)) + ' ' + esc(r.lastBy) + '（' + esc(r.status) + '）' +
                      (r.status === '不一致' && r.lastHit ? '<br><span style="font-size:13px">読取：' + esc(r.lastHit) + '</span>' : '') + '</dd>';
   h += '</dl>';
   if (r.mode === '対象外') {
     h += '<div class="note m">この商品は照合の対象外です（' + esc(r.reason) + '）。</div><button class="btn sec" id="sClose">閉じる</button>';
-  } else if (r.mode === '目視') {
-    h += '<div class="note m">1つの商品に複数のラベルを使う商品です（各種あり）。JANでは判定しません。ラベルを目で確認してください。</div>' +
-         '<button class="btn pri" id="sEye">ラベルを目で確認した</button><button class="btn sec" id="sClose">閉じる</button>';
   } else {
-    if (r.shared) {
+    if (r.multi) {
+      h += '<div class="note w">1つの商品に複数のラベルを使う商品です（各種あり）。<b>JANを読んで一致したら、ラベルの品番も確認してください</b>。</div>';
+    } else if (r.shared) {
       var others = S.data.rows.filter(function (x) { return x.jan === r.jan && x.code !== r.code; })
         .map(function (x) { return x.name; }).filter(function (v, i, a) { return a.indexOf(v) === i; });
-      h += '<div class="note w">このJANは同じ農場の別品種と共用です。<b>JANが一致しても品種違いは見分けられません</b>。ラベルの品種名も目で確認してください。<br>共用：' +
+      h += '<div class="note w">このJANは同じ農場の別品種と共用です。<b>JANが一致しても品種違いは見分けられません</b>。JANを読んで一致したら、ラベルの品番も確認してください。<br>共用：' +
            esc(others.slice(0, 4).join('／')) + (others.length > 4 ? ' ほか' + (others.length - 4) + '件' : '') + '</div>';
     }
-    h += '<button class="btn pri" id="sScan">カメラで読み取る</button>' +
+    if (waitEye(r)) h += '<button class="btn pri" id="sEye">ラベル品番確認した</button><div style="height:10px"></div>';
+    h += '<button class="btn ' + (waitEye(r) ? 'sec' : 'pri') + '" id="sScan">カメラで読み取る</button>' +
          '<div class="manual"><input class="t" id="sJan" inputmode="numeric" placeholder="JANを手入力（13桁）" maxlength="13"><button id="sJanGo">照合</button></div>' +
          '<button class="btn sec" id="sClose" style="margin-top:10px">閉じる</button>';
   }
@@ -489,7 +537,7 @@ function openSheet(key) {
   $('sClose').onclick = closeSheet;
   if ($('sScan')) $('sScan').onclick = startScan;
   if ($('sJanGo')) $('sJanGo').onclick = function () { submitCheck('JAN', $('sJan').value); };
-  if ($('sEye')) $('sEye').onclick = function () { submitCheck('目視', ''); };
+  if ($('sEye')) $('sEye').onclick = function () { submitCheck('品番', ''); };
 }
 function closeSheet() { $('shade').classList.add('hidden'); }
 $('shade').addEventListener('click', function (e) { if (e.target === this) closeSheet(); });
@@ -537,7 +585,7 @@ function prepareDecoder() {
 function startScan() {
   var r = S.current;
   closeSheet();
-  $('scanTop').innerHTML = '<b>' + esc(r.name) + '</b>［' + esc(r.kobetsu || '通常') + '］　JAN末尾 ' + esc(r.jan.slice(-5));
+  $('scanTop').innerHTML = '<b>' + esc(r.name) + '</b>［' + esc(r.kobetsu || '通常') + '］<br>JAN末尾 <b style="display:inline;font-size:18px">' + esc(r.jan.slice(-5)) + '</b>　品番 <b style="display:inline;font-size:18px">' + esc(r.hinban || '－') + '</b>';
   $('scan').classList.remove('hidden');
   $('guide').classList.remove('hit');
   $('scanInfo').textContent = '起動中…';
@@ -635,8 +683,8 @@ function submitCheck(method, jan) {
     jan = d;
   }
   closeSheet();
-  var result = method === '目視' ? '目視確認' : (jan === r.jan ? '一致' : '不一致');
-  var res = { result: result, scanned: method === '目視' ? '' : jan, hit: result === '不一致' ? localHit(jan, r) : '', at: Date.now(), by: S.data.user.name };
+  var result = method === '品番' ? '品番確認' : (jan === r.jan ? '一致' : '不一致');
+  var res = { result: result, scanned: method === '品番' ? '' : jan, hit: result === '不一致' ? localHit(jan, r) : '', at: Date.now(), by: S.data.user.name };
   r.status = res.result; r.lastAt = res.at; r.lastBy = res.by; r.lastScanned = res.scanned; r.lastHit = res.hit;
   showResult(r, res);
   renderList();
@@ -683,19 +731,27 @@ function flushQueue() {
 
 function showResult(r, res) {
   var ok = res.result !== '不一致', el = $('result');
-  el.className = ok ? 'ok' : 'ng';
-  var h = '<div class="big">' + (ok ? '✓' : '✕') + '</div><div class="ttl">' + (res.result === '目視確認' ? '目視で確認しました' : ok ? '一致' : '不一致<div style="font-size:20px;margin-top:6px">ラベルが違います</div>') + '</div>';
-  h += '<div class="detail">予定：<b>' + esc(r.name) + '</b>［' + esc(r.kobetsu || '通常') + '］' + (r.jan ? '<br>JAN ' + esc(r.jan) : '');
-  if (!ok) h += '<br><br>読み取ったラベル：<b>' + esc(res.hit) + '</b><br>JAN ' + esc(res.scanned);
-  if (ok && r.shared && res.result === '一致') h += '<br><br>※同じJANの別品種があります。品種名も目で確認してください。';
+  var needEye = res.result === '一致' && r.eye;       // JANは一致・品番の確認がまだ
+  el.className = !ok ? 'ng' : needEye ? 'eye' : 'ok';
+  var ttl = res.result === '品番確認' ? '照合完了<div style="font-size:18px;margin-top:6px">JAN一致＋品番確認</div>'
+          : needEye ? 'JAN一致<div style="font-size:20px;margin-top:6px">ラベルの品番も確認してください</div>'
+          : ok ? '一致' : '不一致<div style="font-size:20px;margin-top:6px">ラベルが違います</div>';
+  var h = '<div class="big">' + (!ok ? '✕' : needEye ? '！' : '✓') + '</div><div class="ttl">' + ttl + '</div>';
+  h += '<div class="detail">予定：<b>' + esc(r.name) + '</b>［' + esc(r.kobetsu || '通常') + '］' +
+       '<div class="kvb"><span>JAN末尾 <b>' + esc(r.jan.slice(-5)) + '</b></span><span>品番 <b>' + esc(r.hinban || '－') + '</b></span></div>';
+  if (!ok) h += '読み取ったラベル：<b>' + esc(res.hit) + '</b><br>JAN ' + esc(res.scanned);
+  if (needEye) h += r.multi ? '1つの商品に複数のラベルを使う商品です。ラベルの品番が正しいか確認してください。'
+                            : '同じJANの別品種があります。ラベルの品番が「' + esc(r.hinban || '－') + '」か確認してください。';
   h += '</div><div class="acts">';
+  if (needEye) h += '<button class="btn pri" id="rEye">ラベル品番確認した</button>';
   if (!ok) h += '<button class="btn pri" id="rRetry">もう一度読む</button>';
-  h += '<button class="btn ' + (ok ? 'pri' : 'sec') + '" id="rBack">一覧へ戻る</button></div>';
+  h += '<button class="btn ' + (ok && !needEye ? 'pri' : 'sec') + '" id="rBack">' + (needEye ? 'あとで確認する（一覧へ）' : '一覧へ戻る') + '</button></div>';
   el.innerHTML = h;
   el.classList.remove('hidden');
-  try { navigator.vibrate && navigator.vibrate(ok ? 80 : [250, 120, 250]); } catch (e) {}
+  try { navigator.vibrate && navigator.vibrate(!ok ? [250, 120, 250] : 80); } catch (e) {}
   $('rBack').onclick = function () { el.classList.add('hidden'); };
   if ($('rRetry')) $('rRetry').onclick = function () { el.classList.add('hidden'); startScan(); };
+  if ($('rEye')) $('rEye').onclick = function () { el.classList.add('hidden'); S.current = r; submitCheck('品番', ''); };
 }
 
 // ─── 起動 ───
@@ -703,7 +759,11 @@ function showResult(r, res) {
   $('lcode').value = load('lc_code') || '';
   var start = function () {
     S.session = load('lc_session');
-    if (S.session) reload(); else show('login');
+    if (!S.session) { show('login'); return; }
+    var cached = null;
+    try { cached = JSON.parse(load('lc_data') || 'null'); } catch (e) {}
+    if (cached && cached.rows) { onData(cached, true); reload(cached.farm, true); }
+    else reload();
   };
   if (MOCK) {
     var s = document.createElement('script'); s.src = 'mock.js?' + Date.now(); s.onload = start; document.head.appendChild(s);
